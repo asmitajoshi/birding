@@ -2,57 +2,98 @@
 #
 use Data::Dumper;
 use LWP::UserAgent;
+use Scalar::Util qw(looks_like_number);
 #
 #foreach my $page (1..25) {
 #  `wget http://www.birding.in/birds_of_india${page}.htm`
 #}
 #
 
-my %birds = ();
-open(my $file, "all_birds_of_india.html") or die "cannot open file [$!]";
-#while (my $line = <DATA>.<DATA>) {
-print "common_name,scientific_name,img_link,href,order,family,sub_family\n";
-my $count = 0;
-while (my $line = <$file>.<$file>) {
-  #print "[$line]\n";
-  $count++;
-  #print "common_name,scientific_name,img_link,href,order,family,sub_family\n" if (($count % 20) == 0);
-  if ($line =~ m{img.+src="(.+?)".+?alt="(.+?)".*?href="(.+?)".*?>(.+?)</a.+}s) {
-    my $img_link = $1;
-    my $scientific_name = $2;
-    my $href = $3;
-    my $common_name = $4;
-    my $order = "";
-    my $family = "";
-    my $colour = '';
-    my $size_in_cms = 0;
-    my $subfamily = "";
-    if ($href =~ m{birds/(.+?)/(.+?)/(.+?)/}) {
-      $order = $1;
-      $family = $2;
-      $subfamily = $3;
-    } elsif ($href =~ m{birds/(.+?)/(.+?)/}) {
-      $order = $1;
-      $family = $2;
-    } elsif ($href =~ m{birds/(.+?)/.+\.htm}) {
-      $order = $1;
+my $filename = 'all_birds_of_india.html';
+get_birds_csv($filename);
+sub get_size_common {
+    my ($size) = @_;
+    return 'invalid' unless looks_like_number($size);
+    if ($size < 15) {
+        return 'tiny';
+    } elsif ($size < 25) {
+        return 'small';
+    } elsif ($size < 45) {
+        return 'medium';
+    } else {
+        return 'large';
     }
-    my %bird = (
-      img => $img_link,
-      common_name => $common_name,
-      href => $href,
-      colour => $colour,
-      scientific_name => $scientific_name,
-      size => $size_in_cms,
-      order => $order,
-      family => $family,
-      sub_family => $sub_family,
-    );
-    $birds{$order}{$family}{$subfamily}{$scientific_name} = \%bird;
-    print "$common_name,$scientific_name,$img_link,$href,$order,$family,$subfamily,$colour,$size_in_cms\n";
+}
+
+sub get_birds_csv {
+    my ($filename) = @_;
+    my %birds = ();
+    my $website = 'http://www.birding.in/';
+    open(my $file, "$filename") or die "cannot open file [$!]";
+    #while (my $line = <DATA>.<DATA>) {
+    print "common_name,scientific_name,img_link,href,order,family,subfamily,colour,size_in_cms,size_string\n";
+
+    my $count = 0;
+    while (my $line = <$file>.<$file>) {
+        $count++;
+        #print "common_name,scientific_name,img_link,href,order,family,sub_family\n" if (($count % 20) == 0);
+        if ($line =~ m{img.+src="(.+?)".+?alt="(.+?)".*?href="(.+?)".*?>(.+?)</a.+}s) {
+          my $img_link = $website . $1;
+          my $scientific_name = $2;
+          my $href = $website . $3;
+          my $common_name = $4;
+          my $order = "";
+          my $family = "";
+          my $colour = '';
+          my $size_in_cms = 0;
+          my $size_string = '';
+          my $subfamily = "";
+          if ($href =~ m{birds/(.+?)/(.+?)/(.+?)/}) {
+            $order = $1;
+            $family = $2;
+            $subfamily = $3;
+          } elsif ($href =~ m{birds/(.+?)/(.+?)/}) {
+            $order = $1;
+            $family = $2;
+          } elsif ($href =~ m{birds/(.+?)/.+\.htm}) {
+            $order = $1;
+          }
+          my %bird = (
+            img => $img_link,
+            common_name => $common_name,
+            href => $href,
+            colour => $colour,
+            scientific_name => $scientific_name,
+            size_in_cms => $size_in_cms,
+            size_string => $size_string,
+            order => $order,
+            family => $family,
+            subfamily => $subfamily,
+          );
+          $birds{$order}{$family}{$subfamily}{$scientific_name} = \%bird;
+          $size_in_cms = get_bird_size($href);
+          $size_string = get_size_common($size_in_cms);
+          print "$common_name,$scientific_name,$img_link,$href,$order,$family,$subfamily,$colour,$size_in_cms,$size_string\n";
+      }
   }
 }
 
+sub get_bird_size {
+    my ($href) = @_;
+    my $ua = LWP::UserAgent->new;
+    $ua->timeout(10);
+    $ua->env_proxy;
+    my $response = $ua->get($href);
+    if ($response->is_success) {
+        my $content = $response->decoded_content;
+        if ($content =~ m{<b>Size:</b>.*?(\d+)\s*cm.+?<br>}s) {
+            return $1;
+        }
+    } else {
+        print "error getting bird " . $response->status_line;
+    }
+    return 0;
+}
   #warn Data::Dumper->Dump([\%birds], [qw(birds)]);
 
 __DATA__
@@ -83,3 +124,9 @@ __DATA__
 <a href="birds/Galliformes/black_francolin.htm">Black Francolin</a>
 <td><img src="images/Birds/rajiv/martin_s.jpg" width="300" height="200" alt="Riparia paludicola"><br>
 
+__END__
+
+my $test_href = 'http://www.birding.in/birds/Piciformes/Megalaimidae/brown-headed_barbet.htm';
+my $size = get_bird_size($test_href);
+my $size_str = get_size_common($size);
+print "$size and $size_str";
